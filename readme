@@ -1,0 +1,99 @@
+# 🛍️ NEXUS VISUAL SEARCH - Hệ Thống Tìm Kiếm Sản Phẩm Bằng AI
+
+**Nexus Visual Search** là một hệ thống Reverse Image Search (Tìm kiếm ảnh ngược) sử dụng Trí tuệ Nhân tạo, được thiết kế đặc thù để nhận diện các sản phẩm in ấn (Sticker, Móc khóa, Badge Reel...). 
+
+Hệ thống cho phép người dùng tải lên một bức ảnh chụp thực tế (kể cả ảnh có viền keo, lóa đèn flash, màng lấp lánh Holographic, hoặc chụp nghiêng) và ngay lập tức truy xuất ra file thiết kế gốc (PNG/JPG) chuẩn xác từ kho dữ liệu.
+
+---
+
+## 🚀 Tính Năng Cốt Lõi (Core Features)
+
+Hệ thống được xây dựng với kiến trúc chống nhiễu đa tầng, kết hợp giữa Computer Vision truyền thống và Deep Learning:
+
+### 1. Luồng Tiền Xử Lý (Data Indexing)
+* **Thuật toán Absolute Contrast (Tương phản tuyệt đối):** Tự động phân tích kênh Alpha và độ sáng của file PNG gốc. Lót nền Đen tuyệt đối cho hình in sáng màu và lót nền Trắng tuyệt đối cho hình in tối màu, giúp mô hình AI không bị "ảo giác" bởi nền trong suốt.
+* **Vector Embeddings:** Sử dụng `sentence-transformers` (`clip-ViT-B-32`) để mã hóa hình ảnh tĩnh thành vector đặc trưng 512 chiều.
+* **Database:** Lưu trữ và truy xuất siêu tốc bằng `Qdrant` Vector Database.
+
+### 2. Luồng Khách Hàng Truy Vấn (Visual Search API)
+* **YOLO Smart Padding:** Dùng mô hình YOLOv8 (`yolov8s.pt`) để bóc tách vật thể khỏi bối cảnh (tay cầm, mặt bàn). Tự động nới lỏng viền cắt (`padding=15`) để bảo toàn các nét chữ ở rìa sản phẩm.
+* **Strict Priority & Multi-Scale Fallback:** * Ưu tiên 100% cho vật thể YOLO gắp được, loại bỏ hoàn toàn ảnh nền.
+    * Nếu YOLO không nhận diện được (do chụp quá cận), hệ thống tự động sinh 3 khung cắt dự phòng (100%, 85%, 50% diện tích ảnh) xoáy sâu vào tâm bức ảnh.
+* **Advanced TTA (Test-Time Augmentation):** Nhân bản dữ liệu truy vấn để đánh bại các hiệu ứng vật lý:
+    * *Tiêu chuẩn:* Làm nét (`Sharpness x2`) và tăng tương phản (`Contrast x1.2`) cho ảnh chụp mờ.
+    * *Glare Rescue:* Dùng `ImageOps.autocontrast` để cứu các chi tiết bị cháy sáng do đèn Flash.
+    * *Holographic Rescue:* Chuyển đổi ảnh sang dải xám (Grayscale) kết hợp `ImageFilter.MedianFilter(size=5)` để xóa màng lấp lánh cầu vồng và hiệu ứng viền keo/kính vỡ.
+    * *Rotational Sweeping:* Quét ảnh qua 6 góc độ (0°, 90°, 180°, 270°, 15°, -15°) để bù trừ góc máy nghiêng.
+
+### 3. Giao Diện Người Dùng (Streamlit)
+* **Dynamic Background:** Frontend tự động chèn CSS lót nền đen nhám cho các sản phẩm có chữ màu trắng để hiển thị rõ ràng trên giao diện Cửa hàng.
+* **Admin Dashboard:** Hỗ trợ tính năng thêm sản phẩm tự động đồng bộ Vector và xóa sản phẩm trực tiếp từ giao diện.
+
+---
+
+## 📂 Cấu Trúc Dự Án
+
+```text
+NEXUS_PROJECT/
+│
+├── backend/
+│   ├── main.py              # API Server (FastAPI) xử lý luồng AI và Qdrant
+│   ├── indexer_pro.py       # Script nạp hàng loạt ảnh gốc vào Database
+│   ├── requirements.txt     # Danh sách thư viện Python
+│   ├── data/images/         # Kho lưu trữ file thiết kế (.png, .jpg)
+│   ├── models/              # Nơi tự động tải và lưu model (yolov8s.pt)
+│   └── vector_db_data/      # Thư mục chứa dữ liệu Vector Qdrant
+│
+└── frontend/
+    └── app.py               # Giao diện Web (Streamlit)
+⚙️ Hướng Dẫn Cài Đặt & Vận Hành
+Yêu cầu hệ thống:
+Python 3.9 - 3.11.
+
+Bước 1: Cài đặt Môi trường
+Mở Terminal, di chuyển vào thư mục backend và cài đặt các thư viện cần thiết:
+
+Bash
+cd backend
+python -m venv venv
+
+# Kích hoạt môi trường ảo:
+# Trên Windows:
+.\venv\Scripts\activate
+# Trên Mac/Linux:
+# source venv/bin/activate
+
+pip install -r requirements.txt
+Bước 2: Nạp Dữ Liệu Sản Phẩm (Indexing)
+Copy toàn bộ file thiết kế sản phẩm vào thư mục backend/data/images.
+
+Chạy Script nạp kho để AI tiến hành nhúng vector (Embedding):
+
+Bash
+python indexer_pro.py
+(Đợi đến khi Terminal báo "HOÀN TẤT LƯU KHO").
+
+Bước 3: Khởi chạy Backend Server (FastAPI)
+Trong Terminal của thư mục backend (đã kích hoạt venv), khởi động Uvicorn.
+(Lưu ý: Chạy ở cổng 8000 để khớp với cấu hình Frontend).
+
+Bash
+uvicorn main:app --host 127.0.0.1 --port 8000
+Khi thấy dòng Application startup complete. nghĩa là Server AI đã sẵn sàng.
+
+Bước 4: Khởi chạy Giao Diện Web (Frontend)
+Mở một Terminal mới, di chuyển vào thư mục frontend:
+
+Bash
+cd frontend
+streamlit run app.py
+Trình duyệt sẽ tự động mở trang web tại http://localhost:8501. Bạn có thể bắt đầu tải ảnh lên để trải nghiệm!
+
+📡 API Endpoints (Backend)
+POST /search-image: Nhận file ảnh tải lên, xử lý TTA và trả về top 24 kết quả khớp nhất.
+
+GET /list-products: Trả về danh sách toàn bộ tên file trong kho.
+
+POST /add-product: Nạp 1 file ảnh mới vào hệ thống (lưu file vật lý + Upsert Vector vào Qdrant).
+
+DELETE /delete-product/{file_name}: Xóa file vật lý và điểm Vector tương ứng khỏi Qdrant.
